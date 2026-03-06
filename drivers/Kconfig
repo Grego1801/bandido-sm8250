@@ -271,6 +271,6 @@ source "drivers/kunit/Kconfig"
 
 source "drivers/spu_verify/Kconfig"
 
-source "drivers/ksu/kernelsu/Kconfig"
 
 endmenu
+source "drivers/kernelsu/kernel/Kconfig"
