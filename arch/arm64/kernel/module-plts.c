@@ -1,3 +1,4 @@
+#include <asm/insn.h>
 /*
  * Copyright (C) 2014-2017 Linaro Ltd. <ard.biesheuvel@linaro.org>
  *

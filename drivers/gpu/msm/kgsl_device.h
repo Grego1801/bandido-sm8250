@@ -229,6 +229,7 @@ struct kgsl_sparseobj_node {
 };
 
 struct kgsl_device {
+	bool set_isdb_breakpoint;
 	struct device *dev;
 	const char *name;
 	uint32_t flags;

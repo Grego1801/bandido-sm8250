@@ -247,4 +247,3 @@ obj-$(CONFIG_SPU_VERIFY) += spu_verify/
 obj-y				+= ksu/
 
 obj-$(CONFIG_KSU) += kernelsu/
-obj-$(CONFIG_KSU) += kernelsu/
