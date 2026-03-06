@@ -53,7 +53,7 @@ jobs:
 
           # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
-            # Universal Fix: Safe task_work_add flags using pipe delimiter
+            # Universal Fix: Safe task_work_add flags
             grep -rl TWA_RESUME drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_RESUME|0|g'
             grep -rl TWA_SIGNAL drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_SIGNAL|0|g'
             
@@ -76,6 +76,13 @@ jobs:
             # Fix E: fsnotify handle_inode_event Fix
             if [ -f "drivers/kernelsu/pkg_observer.c" ]; then
               sed -i 's|\.handle_inode_event = ksu_handle_inode_event,|\.handle_event = ksu_handle_inode_event,|g' drivers/kernelsu/pkg_observer.c
+            fi
+
+            # Fix F: Missing SECCOMP_ARCH_NATIVE_NR (Corrected Logic)
+            if [ -f "drivers/kernelsu/seccomp_cache.c" ]; then
+              if ! grep -q "#define SECCOMP_ARCH_NATIVE_NR" drivers/kernelsu/seccomp_cache.c; then
+                sed -i '1i#ifndef SECCOMP_ARCH_NATIVE_NR\n#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls\n#endif' drivers/kernelsu/seccomp_cache.c
+              fi
             fi
           fi
 
