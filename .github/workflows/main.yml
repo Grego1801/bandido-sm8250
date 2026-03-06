@@ -37,9 +37,13 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # Patch KernelSU paths before building
-          sed -i 's|source "drivers/kernelsu/Kconfig"|source "drivers/kernelsu/kernel/Kconfig"|' drivers/Kconfig
-          sed -i 's|obj-y += kernelsu/|obj-y += kernelsu/kernel/|' drivers/Makefile
+          # 1. Clean up Kconfig
+          sed -i '/kernelsu/d' drivers/Kconfig
+          echo 'source "drivers/kernelsu/kernel/Kconfig"' >> drivers/Kconfig
+
+          # 2. Clean up Makefile (Removes both duplicate lines and adds the correct one)
+          sed -i '/kernelsu/d' drivers/Makefile
+          echo 'obj-$(CONFIG_KSU) += kernelsu/kernel/' >> drivers/Makefile
 
           export ARCH=arm64
           export SUBARCH=arm64
@@ -53,7 +57,7 @@ jobs:
           # Load defconfig
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
-          # Fix for "Error in reading or end of file" (Handles new Clang config prompts)
+          # Force set all new config options to their defaults
           make O=out ARCH=arm64 olddefconfig
           
           # Start Compilation
@@ -72,4 +76,3 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
-
