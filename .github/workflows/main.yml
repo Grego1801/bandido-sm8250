@@ -37,6 +37,7 @@ jobs:
 
       - name: Install KernelSU
         run: |
+          # UNTOUCHED: Standard KernelSU setup
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
@@ -51,17 +52,25 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. GPU FIX: Inject missing struct member ONLY
-          # REMOVED the <stdbool.h> line to fix the conflict
-          sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
+          # 2. KERNELSU COMPATIBILITY FIX (Namespace Bypass)
+          # Comments out the problematic macro causing the syntax error
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
+            sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
+          fi
 
-          # 3. SCHEDULER FIX: Remove all missing bandido files
+          # 3. GPU FIX: Inject missing struct member with "Duplicate Check"
+          # Only adds the line if it's not already there
+          if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
+            sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
+          fi
+
+          # 4. SCHEDULER FIX: Remove all missing bandido files
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # 4. ARCH FIX: Inject missing header for module-plts
+          # 5. ARCH FIX: Inject missing header for module-plts
           sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
 
-          # 5. Environment Setup
+          # 6. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -72,18 +81,16 @@ jobs:
           
           mkdir -p out
 
-          # 6. Configuration
+          # 7. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
-          # 7. CONFIG FIXES: Disable SMACK and the missing MFC Firmware
+          # 8. CONFIG FIXES
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
-          scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_BRINGUP
-          scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_NETFILTER
           scripts/config --file out/.config --disable CONFIG_SMACK
           scripts/config --file out/.config --disable CONFIG_EXYNOS_MFC
           scripts/config --file out/.config --disable CONFIG_FIRMWARE_IN_KERNEL
           
-          # 8. KSU REQUIREMENTS
+          # 9. KSU REQUIREMENTS
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
           scripts/config --file out/.config --enable CONFIG_KALLSYMS
@@ -94,7 +101,7 @@ jobs:
           
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 9. Compilation
+          # 10. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -119,4 +126,3 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
-
