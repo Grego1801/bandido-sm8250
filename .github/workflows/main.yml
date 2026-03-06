@@ -35,10 +35,6 @@ jobs:
           path: clang
           key: proton-clang-${{ runner.os }}-v1
 
-      # --- SSH DEBUGGING STEP ---
-      # This will provide a link in the logs. Open it to enter the VM.
-      # To continue the build after you are done looking around, 
-      # run 'touch /tmp/continue' in the SSH terminal.
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
         if: github.event_name == 'workflow_dispatch'
@@ -52,24 +48,20 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # 1. Patch Kconfig & Makefile
+          # 1. Patch Kconfig & Makefile for KSU
           sed -i '/ksu/d' drivers/Kconfig
-          sed -i '/kernelsu/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          
           sed -i '/ksu/d' drivers/Makefile
-          sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. Fix missing headers & broken Makefiles
-          sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
+          # 2. FIX: Remove ALL references to missing "bandido" scheduler files
+          # This handles both cpufreq_bandido.o and cpufreq_bandidosaver.o
+          sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # Fix for "No rule to make target kernel/sched/cpufreq_bandido.o"
-          if [ ! -f "kernel/sched/cpufreq_bandido.c" ]; then
-            sed -i '/cpufreq_bandido.o/d' kernel/sched/Makefile
-          fi
+          # 3. FIX: Inject missing header for module-plts
+          sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
 
-          # 3. Environment Setup
+          # 4. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -80,15 +72,24 @@ jobs:
           
           mkdir -p out
 
-          # 4. Configuration
+          # 5. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
+          
+          # 6. FIX: Force Disable SMACK (Very aggressive)
+          scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
+          scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_BRINGUP
+          scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_NETFILTER
+          scripts/config --file out/.config --disable CONFIG_SMACK
+          
+          # Enable KSU requirements
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
           scripts/config --file out/.config --enable CONFIG_KSU
+          
+          # Finalize config
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 5. Compilation
-          # Added flags for smack_lsm pointer errors
+          # 7. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
