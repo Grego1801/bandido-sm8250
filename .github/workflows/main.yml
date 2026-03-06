@@ -53,26 +53,29 @@ jobs:
 
           # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
-            # Universal Fix: Safe task_work_add flags
-            grep -rl TWA_RESUME drivers/kernelsu | xargs -r sed -i 's/TWA_RESUME/0/g'
-            grep -rl TWA_SIGNAL drivers/kernelsu | xargs -r sed -i 's/TWA_SIGNAL/0/g'
+            # Universal Fix: Safe task_work_add flags using pipe delimiter
+            grep -rl TWA_RESUME drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_RESUME|0|g'
+            grep -rl TWA_SIGNAL drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_SIGNAL|0|g'
+            
+            # Universal Fix: Fix UAPI mount.h path
+            grep -rl "uapi/linux/mount.h" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|uapi/linux/mount.h|linux/mount.h|g'
 
             # Fix A: Namespace Bypass
-            sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
+            sed -i 's|MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);|//MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);|g' drivers/kernelsu/ksu.c
             
             # Fix C: seccomp filter_count Fix
             if [ -f "drivers/kernelsu/app_profile.c" ]; then
-              sed -i 's/atomic_set(&current->seccomp.filter_count, 0);/\/\/atomic_set(\&current->seccomp.filter_count, 0);/g' drivers/kernelsu/app_profile.c
+              sed -i 's|atomic_set(&current->seccomp.filter_count, 0);|//atomic_set(\&current->seccomp.filter_count, 0);|g' drivers/kernelsu/app_profile.c
             fi
 
             # Fix D: pgtable.h Header Fix
             if [ -f "drivers/kernelsu/sucompat.c" ]; then
-              sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' drivers/kernelsu/sucompat.c
+              sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' drivers/kernelsu/sucompat.c
             fi
 
             # Fix E: fsnotify handle_inode_event Fix
             if [ -f "drivers/kernelsu/pkg_observer.c" ]; then
-              sed -i 's/\.handle_inode_event = ksu_handle_inode_event,/\.handle_event = ksu_handle_inode_event,/g' drivers/kernelsu/pkg_observer.c
+              sed -i 's|\.handle_inode_event = ksu_handle_inode_event,|\.handle_event = ksu_handle_inode_event,|g' drivers/kernelsu/pkg_observer.c
             fi
           fi
 
