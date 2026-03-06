@@ -23,17 +23,17 @@ jobs:
           libssl-dev libncurses5-dev libncurses-dev \
           lzop python3 unzip zip wget
 
-      - name: Download Proton Clang
-        run: |
-          if [ ! -d "clang" ]; then
-            git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
-          fi
-
       - name: Cache Proton Clang
         uses: actions/cache@v4
         with:
           path: clang
           key: proton-clang-${{ runner.os }}-v1
+
+      - name: Download Proton Clang
+        run: |
+          if [ ! -d "clang" ]; then
+            git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
+          fi
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
@@ -43,25 +43,31 @@ jobs:
 
       - name: Install KernelSU
         run: |
+          # Clean up any old attempts
           rm -rf KernelSU drivers/kernelsu drivers/ksu
+          # Run the official setup
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. Patch Kconfig & Makefile for KSU
+          # 1. Patch Kconfig & Makefile for KSU (Fixed Paths)
           sed -i '/ksu/d' drivers/Kconfig
+          sed -i '/kernelsu/d' drivers/Kconfig
+          # We point it to the file your error was looking for:
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          
           sed -i '/ksu/d' drivers/Makefile
+          sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. FIX: Remove ALL references to missing "bandido" scheduler files
-          # This handles both cpufreq_bandido.o and cpufreq_bandidosaver.o
+          # 2. APPLY YOUR FIXES
+          # Fix A: Remove missing scheduler file reference (Wildcard)
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # 3. FIX: Inject missing header for module-plts
+          # Fix B: Inject missing header for module-plts
           sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
 
-          # 4. Environment Setup
+          # 3. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -72,10 +78,10 @@ jobs:
           
           mkdir -p out
 
-          # 5. Configuration
+          # 4. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
-          # 6. FIX: Force Disable SMACK (Very aggressive)
+          # 5. FIX: Force Disable SMACK (Aggressive)
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_BRINGUP
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_NETFILTER
@@ -89,7 +95,7 @@ jobs:
           # Finalize config
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 7. Compilation
+          # 6. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
