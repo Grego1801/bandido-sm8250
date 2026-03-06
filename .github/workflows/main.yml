@@ -18,47 +18,39 @@ jobs:
           sudo apt update
           sudo apt install -y \
           bc bison build-essential ccache curl flex git \
-          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
           libssl-dev libncurses5-dev libncurses-dev \
-          lzop python3 unzip zip wget
+          libelf-dev lzop python3 unzip zip wget
 
       - name: Cache Proton Clang
         uses: actions/cache@v4
         with:
           path: clang
-          key: proton-clang-${{ runner.os }}-v1
+          key: proton-clang-${{ runner.os }}-${{ hashFiles('**/Makefile') }}
 
       - name: Download Proton Clang
         run: |
           if [ ! -d "clang" ]; then
-            git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
+            git clone --depth=1 --single-branch --no-tags https://github.com/kdrag0n/proton-clang.git clang
           fi
 
       - name: Install KernelSU
         run: |
-          # UNTOUCHED: Standard KernelSU setup
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. Patch Kconfig & Makefile (KERNELSU PART - UNTOUCHED)
-          sed -i '/ksu/d' drivers/Kconfig
-          sed -i '/kernelsu/d' drivers/Kconfig
-          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          
-          sed -i '/ksu/d' drivers/Makefile
-          sed -i '/kernelsu/d' drivers/Makefile
-          echo 'obj-y += kernelsu/' >> drivers/Makefile
+          # 1. Safe Kconfig & Makefile Injection
+          grep -q "kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          grep -q "kernelsu/" drivers/Makefile || echo 'obj-y += kernelsu/' >> drivers/Makefile
 
           # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
-            # Universal Fix: Safe task_work_add flags
-            grep -rl TWA_RESUME drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_RESUME|0|g'
-            grep -rl TWA_SIGNAL drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_SIGNAL|0|g'
-            
-            # Universal Fix: Fix UAPI mount.h path
+            # Universal Header Fixes
+            grep -rl "TWA_RESUME" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_RESUME|0|g'
+            grep -rl "TWA_SIGNAL" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_SIGNAL|0|g'
             grep -rl "uapi/linux/mount.h" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|uapi/linux/mount.h|linux/mount.h|g'
+            grep -rl "linux/pgtable.h" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|linux/pgtable.h|asm/pgtable.h|g'
 
             # Fix A: Namespace Bypass
             sed -i 's|MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);|//MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);|g' drivers/kernelsu/ksu.c
@@ -68,45 +60,47 @@ jobs:
               sed -i 's|atomic_set(&current->seccomp.filter_count, 0);|//atomic_set(\&current->seccomp.filter_count, 0);|g' drivers/kernelsu/app_profile.c
             fi
 
-            # Fix D: pgtable.h Header Fix
-            if [ -f "drivers/kernelsu/sucompat.c" ]; then
-              sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' drivers/kernelsu/sucompat.c
-            fi
-
             # Fix E: fsnotify handle_inode_event Fix
             if [ -f "drivers/kernelsu/pkg_observer.c" ]; then
               sed -i 's|\.handle_inode_event = ksu_handle_inode_event,|\.handle_event = ksu_handle_inode_event,|g' drivers/kernelsu/pkg_observer.c
             fi
 
-            # Fix F: Missing SECCOMP_ARCH_NATIVE_NR (Corrected Logic)
+            # Fix F: Improved SECCOMP_ARCH_NATIVE_NR (Idempotent)
             if [ -f "drivers/kernelsu/seccomp_cache.c" ]; then
-              if ! grep -q "#define SECCOMP_ARCH_NATIVE_NR" drivers/kernelsu/seccomp_cache.c; then
-                sed -i '1i#ifndef SECCOMP_ARCH_NATIVE_NR\n#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls\n#endif' drivers/kernelsu/seccomp_cache.c
-              fi
+              grep -q "asm-generic/unistd.h" drivers/kernelsu/seccomp_cache.c || \
+              sed -i '1i#include <uapi/asm-generic/unistd.h>' drivers/kernelsu/seccomp_cache.c
+              
+              grep -q "SECCOMP_ARCH_NATIVE_NR" drivers/kernelsu/seccomp_cache.c || \
+              sed -i '1i#ifndef SECCOMP_ARCH_NATIVE_NR\n#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls\n#endif' drivers/kernelsu/seccomp_cache.c
+            fi
+
+            # Fix G: Safe file_operations compatibility
+            if [ -f "drivers/kernelsu/file_wrapper.c" ]; then
+              grep -q "REMAP_FILE_DEDUP" drivers/kernelsu/file_wrapper.c || sed -i '1i#define REMAP_FILE_DEDUP 0' drivers/kernelsu/file_wrapper.c
+              sed -i 's|\.iopoll =|//.iopoll =|g' drivers/kernelsu/file_wrapper.c
+              sed -i 's|f_op->iopoll|NULL|g' drivers/kernelsu/file_wrapper.c
+              sed -i 's|\.remap_file_range =|//.remap_file_range =|g' drivers/kernelsu/file_wrapper.c
             fi
           fi
 
-          # 3. GPU FIX: Inject missing struct member (IDEMPOTENT)
+          # 3. GPU FIX: Idempotent
           if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
             sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
           fi
 
-          # 4. SCHEDULER FIX: Remove all missing bandido files
+          # 4. SCHEDULER FIX
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # 5. ARCH FIX: Inject missing header for module-plts (IDEMPOTENT)
+          # 5. ARCH FIX: Idempotent
           if ! grep -q "asm/insn.h" arch/arm64/kernel/module-plts.c; then
             sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
           fi
 
           # 6. Environment Setup
           export ARCH=arm64
-          export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
           export KCONFIG_NONINTERACTIVE=1
+          export CC="ccache clang"
           
           mkdir -p out
 
@@ -130,22 +124,12 @@ jobs:
           
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 10. Compilation
-          make -j$(nproc) \
+          # 10. Compilation (Pure LLVM Suite)
+          make -j$(nproc) LLVM=1 LLVM_IAS=1 \
           O=out \
           ARCH=arm64 \
-          CC=clang \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
           HOSTCFLAGS="-fcommon" \
-          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -fcommon -Wno-return-type -Wno-implicit-int -Wno-incompatible-pointer-types" \
-          CLANG_TRIPLE=$CLANG_TRIPLE \
-          CROSS_COMPILE=$CROSS_COMPILE \
-          CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
+          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-return-type -Wno-implicit-int -Wno-incompatible-pointer-types -Wno-address-of-packed-member -fcommon"
 
       - name: Upload kernel
         if: always()
