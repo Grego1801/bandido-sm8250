@@ -40,14 +40,19 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # 1. CLEAN & INJECT Kconfig/Makefile (Total Wipe of broken paths)
+          # 1. CLEAN & INJECT Kconfig/Makefile
           sed -i '/kernelsu/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. KERNELSU COMPATIBILITY FIXES
+          # 2. SYMLINK FIX: Map kernelsu to ksu (The new fix)
+          if [ -d drivers/kernelsu ] && [ ! -d drivers/ksu ]; then
+            ln -s kernelsu drivers/ksu
+          fi
+
+          # 3. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
             grep -rl "TWA_RESUME" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_RESUME|0|g'
             grep -rl "TWA_SIGNAL" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_SIGNAL|0|g'
@@ -80,20 +85,20 @@ jobs:
             fi
           fi
 
-          # 3. GPU FIX
+          # 4. GPU FIX
           if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
             sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
           fi
 
-          # 4. SCHEDULER FIX
+          # 5. SCHEDULER FIX
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # 5. ARCH FIX
+          # 6. ARCH FIX
           if ! grep -q "asm/insn.h" arch/arm64/kernel/module-plts.c; then
             sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
           fi
 
-          # 6. Environment Setup
+          # 7. Environment Setup
           export ARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
           export KCONFIG_NONINTERACTIVE=1
@@ -101,16 +106,16 @@ jobs:
           
           mkdir -p out
 
-          # 7. Configuration
+          # 8. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
-          # 8. CONFIG FIXES
+          # 9. CONFIG FIXES
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
           scripts/config --file out/.config --disable CONFIG_SMACK
           scripts/config --file out/.config --disable CONFIG_EXYNOS_MFC
           scripts/config --file out/.config --disable CONFIG_FIRMWARE_IN_KERNEL
           
-          # 9. KSU REQUIREMENTS
+          # 10. KSU REQUIREMENTS
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
           scripts/config --file out/.config --enable CONFIG_KALLSYMS
@@ -121,7 +126,7 @@ jobs:
           
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 10. Compilation
+          # 11. Compilation
           make -j$(nproc) LLVM=1 LLVM_IAS=1 \
           O=out \
           ARCH=arm64 \
