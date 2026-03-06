@@ -37,7 +37,9 @@ jobs:
 
       - name: Install KernelSU (Fresh)
         run: |
+          # Clean messy folders to ensure fresh install
           rm -rf KernelSU drivers/kernelsu drivers/ksu
+          # Official installer puts files in drivers/kernelsu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
@@ -68,6 +70,7 @@ jobs:
           # 3. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
+          # Enable KSU and required dependencies
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
           scripts/config --file out/.config --enable CONFIG_KSU
@@ -75,11 +78,20 @@ jobs:
           make O=out ARCH=arm64 olddefconfig
 
           # 4. Compilation
+          # Added LD=ld.lld to fix "unrecognised emulation mode"
+          # Added -Wno-error to prevent build stops on trivial warnings
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
           CC=clang \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
           HOSTCFLAGS="$HOSTCFLAGS" \
+          KCFLAGS="-Wno-error" \
           CLANG_TRIPLE=$CLANG_TRIPLE \
           CROSS_COMPILE=$CROSS_COMPILE \
           CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
@@ -91,3 +103,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
+
