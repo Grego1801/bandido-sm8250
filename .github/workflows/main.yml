@@ -23,19 +23,19 @@ jobs:
           libssl-dev libncurses5-dev libncurses-dev \
           lzop python3 unzip zip wget
 
-      - name: Download Proton Clang
-        run: |
-          if [ ! -d "clang" ]; then
-            git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
-          fi
-
       - name: Cache Proton Clang
         uses: actions/cache@v4
         with:
           path: clang
           key: proton-clang-${{ runner.os }}-v1
 
-      - name: Install KernelSU (Fresh)
+      - name: Download Proton Clang
+        run: |
+          if [ ! -d "clang" ]; then
+            git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
+          fi
+
+      - name: Install KernelSU
         run: |
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
@@ -51,7 +51,7 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. Fix missing headers for module-plts (Brute force header injection)
+          # 2. Fix missing headers for module-plts
           sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
 
           # 3. Environment Setup
@@ -62,18 +62,18 @@ jobs:
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export KCONFIG_NONINTERACTIVE=1
-          export HOSTCFLAGS="-fcommon"
           
           mkdir -p out
 
-          # 4. Configuration
+          # 4. Configuration (Force non-interactive)
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
           scripts/config --file out/.config --enable CONFIG_KSU
           
-          make O=out ARCH=arm64 olddefconfig
+          # This 'yes' command forces the build to accept all default answers for new configs
+          yes "" | make O=out ARCH=arm64 oldconfig
 
           # 5. Compilation
           make -j$(nproc) \
@@ -86,7 +86,7 @@ jobs:
           OBJCOPY=llvm-objcopy \
           OBJDUMP=llvm-objdump \
           STRIP=llvm-strip \
-          HOSTCFLAGS="$HOSTCFLAGS" \
+          HOSTCFLAGS="-fcommon" \
           KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion" \
           CLANG_TRIPLE=$CLANG_TRIPLE \
           CROSS_COMPILE=$CROSS_COMPILE \
@@ -99,5 +99,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
-
 
