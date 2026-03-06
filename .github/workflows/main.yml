@@ -25,28 +25,28 @@ jobs:
 
       - name: Download Proton Clang
         run: |
-          # Fast clone
+          # The fastest way to get Proton Clang
           git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
 
       - name: Install KernelSU (Fresh)
         run: |
-          # Remove any leftover folders to prevent conflicts
+          # Nuke the messy folders so we start clean
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           
-          # Official installer (Installs to drivers/kernelsu)
+          # Run the official installer (This puts files in drivers/kernelsu)
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # Fix Kconfig: Delete any existing KSU lines and add a fresh one
+          # 1. Patch Kconfig & Makefile
+          # Remove any previous kernelsu lines and add the correct one
           sed -i '/kernelsu/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           
-          # Fix Makefile: Delete any existing KSU lines and add a fresh one
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # Environment Setup
+          # 2. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -56,11 +56,12 @@ jobs:
           export KCONFIG_NONINTERACTIVE=1
           mkdir -p out
 
-          # Configuration
+          # 3. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
+          # This handles all the (NEW) prompts automatically
           make O=out ARCH=arm64 olddefconfig
 
-          # Compilation
+          # 4. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
