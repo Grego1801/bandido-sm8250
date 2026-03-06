@@ -35,39 +35,31 @@ jobs:
             git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
           fi
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: github.event_name == 'workflow_dispatch'
-        with:
-          limit-access-to-actor: true
-
       - name: Install KernelSU
         run: |
-          # Clean up any old attempts
           rm -rf KernelSU drivers/kernelsu drivers/ksu
-          # Run the official setup
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. Patch Kconfig & Makefile for KSU (Fixed Paths)
+          # 1. KSU Patching
           sed -i '/ksu/d' drivers/Kconfig
-          sed -i '/kernelsu/d' drivers/Kconfig
-          # We point it to the file your error was looking for:
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          
           sed -i '/ksu/d' drivers/Makefile
-          sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. APPLY YOUR FIXES
-          # Fix A: Remove missing scheduler file reference (Wildcard)
+          # 2. GPU FIX: Inject missing struct member & safety header (Your Safety Patch)
+          # We add stdbool.h to the top and the bool member to the struct
+          sed -i '1i#include <stdbool.h>' drivers/gpu/msm/kgsl_device.h
+          sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
+
+          # 3. SCHEDULER FIX: Remove all missing bandido files
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # Fix B: Inject missing header for module-plts
+          # 4. ARCH FIX: Inject missing header for module-plts
           sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
 
-          # 3. Environment Setup
+          # 5. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -78,24 +70,29 @@ jobs:
           
           mkdir -p out
 
-          # 4. Configuration
+          # 6. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
-          # 5. FIX: Force Disable SMACK (Aggressive)
+          # 7. CONFIG FIXES: Disable SMACK and the missing MFC Firmware
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_BRINGUP
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK_NETFILTER
           scripts/config --file out/.config --disable CONFIG_SMACK
+          scripts/config --file out/.config --disable CONFIG_EXYNOS_MFC
+          scripts/config --file out/.config --disable CONFIG_FIRMWARE_IN_KERNEL
           
-          # Enable KSU requirements
+          # 8. KSU REQUIREMENTS: Enable full symbol support
           scripts/config --file out/.config --enable CONFIG_KPROBES
+          scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
+          scripts/config --file out/.config --enable CONFIG_KALLSYMS
+          scripts/config --file out/.config --enable CONFIG_KALLSYMS_ALL
+          scripts/config --file out/.config --enable CONFIG_MODULES
           scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
           scripts/config --file out/.config --enable CONFIG_KSU
           
-          # Finalize config
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 6. Compilation
+          # 9. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
