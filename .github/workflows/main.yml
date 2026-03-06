@@ -1,47 +1,4 @@
-name: Build Kernel
-
-on:
-  push:
-    branches:
-      - bandido
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-          bc bison build-essential ccache curl flex git \
-          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-          libssl-dev libncurses5-dev libncurses-dev \
-          lzop python3 unzip zip wget
-
-      - name: Cache Proton Clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: proton-clang-${{ runner.os }}-v1
-
-      - name: Download Proton Clang
-        run: |
-          if [ ! -d "clang" ]; then
-            git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
-          fi
-
-      - name: Install KernelSU
-        run: |
-          # UNTOUCHED: Standard KernelSU setup
-          rm -rf KernelSU drivers/kernelsu drivers/ksu
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-
-      - name: Build Kernel
+- name: Build Kernel
         run: |
           # 1. Patch Kconfig & Makefile (KERNELSU PART - UNTOUCHED)
           sed -i '/ksu/d' drivers/Kconfig
@@ -52,11 +9,11 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. KERNELSU COMPATIBILITY FIXES (UNIVERSAL PATCHES)
+          # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
-            # Universal Fix for task_work_add flags (The Error You Just Had)
-            grep -rl TWA_RESUME drivers/kernelsu | xargs sed -i 's/TWA_RESUME/0/g'
-            grep -rl TWA_SIGNAL drivers/kernelsu | xargs sed -i 's/TWA_SIGNAL/0/g'
+            # Universal Fix: Safe task_work_add flags
+            grep -rl TWA_RESUME drivers/kernelsu | xargs -r sed -i 's/TWA_RESUME/0/g'
+            grep -rl TWA_SIGNAL drivers/kernelsu | xargs -r sed -i 's/TWA_SIGNAL/0/g'
 
             # Fix A: Namespace Bypass
             sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
@@ -77,7 +34,7 @@ jobs:
             fi
           fi
 
-          # 3. GPU FIX: Inject missing struct member
+          # 3. GPU FIX: Inject missing struct member (IDEMPOTENT)
           if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
             sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
           fi
@@ -85,8 +42,10 @@ jobs:
           # 4. SCHEDULER FIX: Remove all missing bandido files
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # 5. ARCH FIX: Inject missing header for module-plts
-          sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
+          # 5. ARCH FIX: Inject missing header for module-plts (IDEMPOTENT)
+          if ! grep -q "asm/insn.h" arch/arm64/kernel/module-plts.c; then
+            sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
+          fi
 
           # 6. Environment Setup
           export ARCH=arm64
@@ -135,12 +94,3 @@ jobs:
           CLANG_TRIPLE=$CLANG_TRIPLE \
           CROSS_COMPILE=$CROSS_COMPILE \
           CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
-
-      - name: Upload kernel
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-image
-          path: |
-            out/arch/arm64/boot/Image
-            out/arch/arm64/boot/dtb*
