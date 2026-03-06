@@ -37,7 +37,7 @@ jobs:
 
       - name: Install KernelSU
         run: |
-          # UNTOUCHED: Standard KernelSU setup
+          # UNTOUCHED: Standard KernelSU setup script
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
@@ -53,13 +53,15 @@ jobs:
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
           # 2. KERNELSU COMPATIBILITY FIXES
-          if [ -d "drivers/kernelsu" ]; then
-            # Fix A: Namespace Bypass
+          # Fix A: Namespace Bypass
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
             sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
-            
-            # Fix B: TWA_RESUME Bypass (For kernels < 5.9)
-            # We try TWA_SIGNAL first, then fall back to 1 (true)
-            sed -i 's/TWA_RESUME/TWA_SIGNAL/g' drivers/kernelsu/allowlist.c
+          fi
+          
+          # Fix B: task_work_add Flag Fix (The Universal Fix)
+          if [ -f "drivers/kernelsu/allowlist.c" ]; then
+            sed -i 's/TWA_RESUME/0/g' drivers/kernelsu/allowlist.c
+            sed -i 's/TWA_SIGNAL/0/g' drivers/kernelsu/allowlist.c
           fi
 
           # 3. GPU FIX: Inject missing struct member (with check)
