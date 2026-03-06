@@ -35,6 +35,16 @@ jobs:
           path: clang
           key: proton-clang-${{ runner.os }}-v1
 
+      # --- SSH DEBUGGING STEP ---
+      # This will provide a link in the logs. Open it to enter the VM.
+      # To continue the build after you are done looking around, 
+      # run 'touch /tmp/continue' in the SSH terminal.
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          limit-access-to-actor: true
+
       - name: Install KernelSU
         run: |
           rm -rf KernelSU drivers/kernelsu drivers/ksu
@@ -51,8 +61,13 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. Fix missing headers (Previous successful fixes)
+          # 2. Fix missing headers & broken Makefiles
           sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
+          
+          # Fix for "No rule to make target kernel/sched/cpufreq_bandido.o"
+          if [ ! -f "kernel/sched/cpufreq_bandido.c" ]; then
+            sed -i '/cpufreq_bandido.o/d' kernel/sched/Makefile
+          fi
 
           # 3. Environment Setup
           export ARCH=arm64
@@ -67,16 +82,13 @@ jobs:
 
           # 4. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
-          
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
           scripts/config --file out/.config --enable CONFIG_KSU
-          
           yes "" | make O=out ARCH=arm64 oldconfig
 
           # 5. Compilation
-          # Added -fcommon to fix multiple definition errors in sdfat
-          # Added -Wno-return-type to handle missing returns in filesystem drivers
+          # Added flags for smack_lsm pointer errors
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -88,7 +100,7 @@ jobs:
           OBJDUMP=llvm-objdump \
           STRIP=llvm-strip \
           HOSTCFLAGS="-fcommon" \
-          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -fcommon -Wno-return-type -Wno-implicit-int" \
+          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -fcommon -Wno-return-type -Wno-implicit-int -Wno-incompatible-pointer-types" \
           CLANG_TRIPLE=$CLANG_TRIPLE \
           CROSS_COMPILE=$CROSS_COMPILE \
           CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
