@@ -23,26 +23,33 @@ jobs:
           libssl-dev libncurses5-dev libncurses-dev \
           lzop python3 unzip zip wget
 
+      - name: Cache Proton Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: proton-clang
+
       - name: Download Proton Clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          # The fastest way to get Proton Clang
           git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
 
       - name: Install KernelSU (Fresh)
         run: |
-          # Nuke the messy folders so we start clean
+          # Nuke messy folders to ensure fresh install
           rm -rf KernelSU drivers/kernelsu drivers/ksu
-          
-          # Run the official installer (This puts files in drivers/kernelsu)
+          # Official installer puts files in drivers/kernelsu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. Patch Kconfig & Makefile
-          # Remove any previous kernelsu lines and add the correct one
+          # 1. Patch Kconfig & Makefile (Removes 'ksu' ghost paths and adds 'kernelsu')
+          sed -i '/ksu/d' drivers/Kconfig
           sed -i '/kernelsu/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           
+          sed -i '/ksu/d' drivers/Makefile
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
@@ -58,7 +65,12 @@ jobs:
 
           # 3. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
-          # This handles all the (NEW) prompts automatically
+          
+          # Manually enable required configs to avoid interactive prompts
+          scripts/config --file out/.config --enable CONFIG_KPROBES
+          scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
+          scripts/config --file out/.config --enable CONFIG_KSU
+          
           make O=out ARCH=arm64 olddefconfig
 
           # 4. Compilation
