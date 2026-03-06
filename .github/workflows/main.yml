@@ -66,9 +66,14 @@ jobs:
               sed -i 's/atomic_set(&current->seccomp.filter_count, 0);/\/\/atomic_set(\&current->seccomp.filter_count, 0);/g' drivers/kernelsu/app_profile.c
             fi
 
-            # Fix D: pgtable.h Header Fix (The New Error)
+            # Fix D: pgtable.h Header Fix
             if [ -f "drivers/kernelsu/sucompat.c" ]; then
               sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' drivers/kernelsu/sucompat.c
+            fi
+
+            # Fix E: fsnotify handle_inode_event Fix (The New Error)
+            if [ -f "drivers/kernelsu/pkg_observer.c" ]; then
+              sed -i 's/\.handle_inode_event = ksu_handle_inode_event,/\.handle_event = ksu_handle_inode_event,/g' drivers/kernelsu/pkg_observer.c
             fi
           fi
 
