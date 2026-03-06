@@ -37,6 +37,10 @@ jobs:
 
       - name: Build Kernel
         run: |
+          # Patch KernelSU paths before building
+          sed -i 's|source "drivers/kernelsu/Kconfig"|source "drivers/kernelsu/kernel/Kconfig"|' drivers/Kconfig
+          sed -i 's|obj-y += kernelsu/|obj-y += kernelsu/kernel/|' drivers/Makefile
+
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -45,8 +49,14 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export KCONFIG_NONINTERACTIVE=1
           mkdir -p out
+          
+          # Load defconfig
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
+          
+          # Fix for "Error in reading or end of file" (Handles new Clang config prompts)
           make O=out ARCH=arm64 olddefconfig
+          
+          # Start Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -62,3 +72,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
+
