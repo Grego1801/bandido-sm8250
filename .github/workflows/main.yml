@@ -37,8 +37,25 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # 1. Environment Setup
-          # These ensure Clang targets ARM64 correctly to avoid the 'sp' register errors
+          # 1. Setup KernelSU (Integrated here to avoid "file not found" errors)
+          # We run the setup script and then MANUALLY ensure the Kconfig/Makefile links exist
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          
+          # Force the links in case setup.sh missed them
+          if [ ! -d "drivers/kernelsu" ]; then
+            mv KernelSU drivers/kernelsu || true
+          fi
+          
+          # Ensure Kconfig and Makefile points to KernelSU
+          sed -i '/ksu/d' drivers/Kconfig
+          sed -i '/kernelsu/d' drivers/Kconfig
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          
+          sed -i '/ksu/d' drivers/Makefile
+          sed -i '/kernelsu/d' drivers/Makefile
+          echo 'obj-y += kernelsu/' >> drivers/Makefile
+
+          # 2. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -49,18 +66,16 @@ jobs:
           
           mkdir -p out
 
-          # 2. Configuration
-          # Using your specific defconfig
+          # 3. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
-          # 3. Apply Config Tweaks (Critical for Samsung/Qualcomm vendor sources)
-          # These are config-level, not source-level, so they stay here.
+          # 4. Apply Config Tweaks
           scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
           scripts/config --file out/.config --disable CONFIG_SMACK
           scripts/config --file out/.config --disable CONFIG_EXYNOS_MFC
           scripts/config --file out/.config --disable CONFIG_FIRMWARE_IN_KERNEL
           
-          # 4. Ensure KernelSU is enabled in config
+          # 5. Enable KSU Requirements
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
           scripts/config --file out/.config --enable CONFIG_KALLSYMS
@@ -72,8 +87,7 @@ jobs:
           # Sync the config changes
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 5. Compilation
-          # Using the full LLVM suite for the most stable build
+          # 6. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
