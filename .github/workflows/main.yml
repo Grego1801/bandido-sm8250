@@ -23,17 +23,17 @@ jobs:
           libssl-dev libncurses5-dev libncurses-dev \
           lzop python3 unzip zip wget
 
-      - name: Cache Proton Clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: proton-clang-${{ runner.os }}-v1
-
       - name: Download Proton Clang
         run: |
           if [ ! -d "clang" ]; then
             git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
           fi
+
+      - name: Cache Proton Clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: proton-clang-${{ runner.os }}-v1
 
       - name: Install KernelSU
         run: |
@@ -51,7 +51,7 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. Fix missing headers for module-plts
+          # 2. Fix missing headers (Previous successful fixes)
           sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
 
           # 3. Environment Setup
@@ -65,17 +65,18 @@ jobs:
           
           mkdir -p out
 
-          # 4. Configuration (Force non-interactive)
+          # 4. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
           scripts/config --file out/.config --enable CONFIG_KSU
           
-          # This 'yes' command forces the build to accept all default answers for new configs
           yes "" | make O=out ARCH=arm64 oldconfig
 
           # 5. Compilation
+          # Added -fcommon to fix multiple definition errors in sdfat
+          # Added -Wno-return-type to handle missing returns in filesystem drivers
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -87,12 +88,13 @@ jobs:
           OBJDUMP=llvm-objdump \
           STRIP=llvm-strip \
           HOSTCFLAGS="-fcommon" \
-          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion" \
+          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -fcommon -Wno-return-type -Wno-implicit-int" \
           CLANG_TRIPLE=$CLANG_TRIPLE \
           CROSS_COMPILE=$CROSS_COMPILE \
           CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
 
       - name: Upload kernel
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
