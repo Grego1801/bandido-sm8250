@@ -17,8 +17,7 @@ steps:
   - name: Install dependencies
     run: |
       sudo apt update
-      sudo apt install -y \
-      bc bison build-essential ccache curl flex git \
+      sudo apt install -y bc bison build-essential ccache curl flex git \
       gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
       libssl-dev libncurses5-dev libncurses-dev \
       lzop python3 unzip zip wget binutils-aarch64-linux-gnu
@@ -27,7 +26,7 @@ steps:
     uses: actions/cache@v4
     with:
       path: clang
-      key: proton-clang-Linux-v1
+      key: proton-clang-v1
 
   - name: Download Proton Clang
     run: |
@@ -51,16 +50,8 @@ steps:
 
       mkdir -p out
 
-      # Load defconfig
       make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
 
-      # Config tweaks
-      scripts/config --file out/.config --disable CONFIG_SECURITY_SMACK
-      scripts/config --file out/.config --disable CONFIG_SMACK
-      scripts/config --file out/.config --disable CONFIG_EXYNOS_MFC
-      scripts/config --file out/.config --disable CONFIG_FIRMWARE_IN_KERNEL
-
-      # KernelSU requirements
       scripts/config --file out/.config --enable CONFIG_KPROBES
       scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
       scripts/config --file out/.config --enable CONFIG_KALLSYMS
@@ -71,7 +62,6 @@ steps:
 
       yes "" | make O=out ARCH=arm64 oldconfig
 
-      # Compile
       make -j$(nproc) \
       O=out \
       ARCH=arm64 \
@@ -84,9 +74,7 @@ steps:
       NM=llvm-nm \
       OBJCOPY=llvm-objcopy \
       OBJDUMP=llvm-objdump \
-      STRIP=llvm-strip \
-      HOSTCFLAGS="-fcommon" \
-      KCFLAGS="-Wno-error -fcommon -Wno-incompatible-pointer-types -Wno-implicit-function-declaration"
+      STRIP=llvm-strip
 
   - name: Upload kernel
     if: always()
