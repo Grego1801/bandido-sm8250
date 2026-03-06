@@ -52,14 +52,17 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. KERNELSU COMPATIBILITY FIX (Namespace Bypass)
-          # Comments out the problematic macro causing the syntax error
-          if [ -f "drivers/kernelsu/ksu.c" ]; then
+          # 2. KERNELSU COMPATIBILITY FIXES
+          if [ -d "drivers/kernelsu" ]; then
+            # Fix A: Namespace Bypass (Already working)
             sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
+            
+            # Fix B: TWA_RESUME Bypass (The new error)
+            # In older kernels, we replace TWA_RESUME with TWA_SIGNAL or 1
+            sed -i 's/TWA_RESUME/TWA_SIGNAL/g' drivers/kernelsu/allowlist.c || sed -i 's/TWA_RESUME/1/g' drivers/kernelsu/allowlist.c
           fi
 
-          # 3. GPU FIX: Inject missing struct member with "Duplicate Check"
-          # Only adds the line if it's not already there
+          # 3. GPU FIX: Inject missing struct member
           if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
             sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
           fi
