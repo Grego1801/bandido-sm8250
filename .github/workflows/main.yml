@@ -37,7 +37,7 @@ jobs:
 
       - name: Install KernelSU
         run: |
-          # UNTOUCHED: Your preferred KernelSU setup
+          # UNTOUCHED: Standard KernelSU setup
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
@@ -52,7 +52,7 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. KERNELSU COMPATIBILITY FIXES (Surgical Patches)
+          # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
             # Fix A: Namespace Bypass
             sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
@@ -61,14 +61,18 @@ jobs:
             sed -i 's/TWA_RESUME/0/g' drivers/kernelsu/allowlist.c
             sed -i 's/TWA_SIGNAL/0/g' drivers/kernelsu/allowlist.c
 
-            # Fix C: seccomp filter_count Fix (The new error)
-            # This comments out the line that tries to access the non-existent filter_count
+            # Fix C: seccomp filter_count Fix
             if [ -f "drivers/kernelsu/app_profile.c" ]; then
               sed -i 's/atomic_set(&current->seccomp.filter_count, 0);/\/\/atomic_set(\&current->seccomp.filter_count, 0);/g' drivers/kernelsu/app_profile.c
             fi
+
+            # Fix D: pgtable.h Header Fix (The New Error)
+            if [ -f "drivers/kernelsu/sucompat.c" ]; then
+              sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' drivers/kernelsu/sucompat.c
+            fi
           fi
 
-          # 3. GPU FIX: Inject missing struct member (with check)
+          # 3. GPU FIX: Inject missing struct member
           if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
             sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
           fi
