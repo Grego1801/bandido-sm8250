@@ -37,7 +37,7 @@ jobs:
 
       - name: Install KernelSU
         run: |
-          # UNTOUCHED: Standard KernelSU setup script
+          # UNTOUCHED: Your preferred KernelSU setup
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
@@ -52,16 +52,20 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. KERNELSU COMPATIBILITY FIXES
-          # Fix A: Namespace Bypass
-          if [ -f "drivers/kernelsu/ksu.c" ]; then
+          # 2. KERNELSU COMPATIBILITY FIXES (Surgical Patches)
+          if [ -d "drivers/kernelsu" ]; then
+            # Fix A: Namespace Bypass
             sed -i 's/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/\/\/MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);/g' drivers/kernelsu/ksu.c
-          fi
-          
-          # Fix B: task_work_add Flag Fix (The Universal Fix)
-          if [ -f "drivers/kernelsu/allowlist.c" ]; then
+            
+            # Fix B: task_work_add Flag Fix (Universal 0)
             sed -i 's/TWA_RESUME/0/g' drivers/kernelsu/allowlist.c
             sed -i 's/TWA_SIGNAL/0/g' drivers/kernelsu/allowlist.c
+
+            # Fix C: seccomp filter_count Fix (The new error)
+            # This comments out the line that tries to access the non-existent filter_count
+            if [ -f "drivers/kernelsu/app_profile.c" ]; then
+              sed -i 's/atomic_set(&current->seccomp.filter_count, 0);/\/\/atomic_set(\&current->seccomp.filter_count, 0);/g' drivers/kernelsu/app_profile.c
+            fi
           fi
 
           # 3. GPU FIX: Inject missing struct member (with check)
