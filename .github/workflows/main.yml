@@ -23,28 +23,30 @@ jobs:
           libssl-dev libncurses5-dev libncurses-dev \
           lzop python3 unzip zip wget
 
-      - name: Cache Proton Clang
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: proton-clang
-
       - name: Download Proton Clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
+          # Fast clone
+          git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
+
+      - name: Install KernelSU (Fresh)
+        run: |
+          # Remove any leftover folders to prevent conflicts
+          rm -rf KernelSU drivers/kernelsu drivers/ksu
+          
+          # Official installer (Installs to drivers/kernelsu)
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. Clean up Kconfig
+          # Fix Kconfig: Delete any existing KSU lines and add a fresh one
           sed -i '/kernelsu/d' drivers/Kconfig
-          echo 'source "drivers/kernelsu/kernel/Kconfig"' >> drivers/Kconfig
-
-          # 2. Clean up Makefile (Removes both duplicate lines and adds the correct one)
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          
+          # Fix Makefile: Delete any existing KSU lines and add a fresh one
           sed -i '/kernelsu/d' drivers/Makefile
-          echo 'obj-$(CONFIG_KSU) += kernelsu/kernel/' >> drivers/Makefile
+          echo 'obj-y += kernelsu/' >> drivers/Makefile
 
+          # Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -53,14 +55,12 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export KCONFIG_NONINTERACTIVE=1
           mkdir -p out
-          
-          # Load defconfig
+
+          # Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
-          
-          # Force set all new config options to their defaults
           make O=out ARCH=arm64 olddefconfig
-          
-          # Start Compilation
+
+          # Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -76,3 +76,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
+
