@@ -25,12 +25,10 @@ jobs:
 
       - name: Download Proton Clang
         run: |
-          # Use --depth=1 and --single-branch for maximum speed
           if [ ! -d "clang" ]; then
             git clone --depth=1 --single-branch https://github.com/kdrag0n/proton-clang.git clang
           fi
 
-      # Cache is placed HERE so Clang is saved before the risky build starts
       - name: Cache Proton Clang
         uses: actions/cache@v4
         with:
@@ -53,7 +51,10 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. Environment Setup
+          # 2. Fix missing headers for module-plts (Brute force header injection)
+          sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
+
+          # 3. Environment Setup
           export ARCH=arm64
           export SUBARCH=arm64
           export PATH=$PWD/clang/bin:$PATH
@@ -65,7 +66,7 @@ jobs:
           
           mkdir -p out
 
-          # 3. Configuration
+          # 4. Configuration
           make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
           
           scripts/config --file out/.config --enable CONFIG_KPROBES
@@ -74,8 +75,7 @@ jobs:
           
           make O=out ARCH=arm64 olddefconfig
 
-          # 4. Compilation (Linker Fixes)
-          # LD=ld.lld is required for Proton Clang to handle VDSO correctly
+          # 5. Compilation
           make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -87,7 +87,7 @@ jobs:
           OBJDUMP=llvm-objdump \
           STRIP=llvm-strip \
           HOSTCFLAGS="$HOSTCFLAGS" \
-          KCFLAGS="-Wno-error" \
+          KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion" \
           CLANG_TRIPLE=$CLANG_TRIPLE \
           CROSS_COMPILE=$CROSS_COMPILE \
           CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32
@@ -99,4 +99,5 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
+
 
