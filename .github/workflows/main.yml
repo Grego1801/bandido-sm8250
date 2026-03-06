@@ -35,14 +35,15 @@ jobs:
 
       - name: Install KernelSU
         run: |
+          # Standard KernelSU setup - leave as is
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. Safe Kconfig & Makefile Injection
-          grep -q "kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          grep -q "kernelsu/" drivers/Makefile || echo 'obj-y += kernelsu/' >> drivers/Makefile
+          # 1. FIXED Kconfig & Makefile Injection (Corrected Path)
+          grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          grep -q "obj-y += kernelsu/" drivers/Makefile || echo 'obj-y += kernelsu/' >> drivers/Makefile
 
           # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
@@ -65,7 +66,7 @@ jobs:
               sed -i 's|\.handle_inode_event = ksu_handle_inode_event,|\.handle_event = ksu_handle_inode_event,|g' drivers/kernelsu/pkg_observer.c
             fi
 
-            # Fix F: Improved SECCOMP_ARCH_NATIVE_NR (Idempotent)
+            # Fix F: Missing SECCOMP_ARCH_NATIVE_NR (Idempotent)
             if [ -f "drivers/kernelsu/seccomp_cache.c" ]; then
               grep -q "asm-generic/unistd.h" drivers/kernelsu/seccomp_cache.c || \
               sed -i '1i#include <uapi/asm-generic/unistd.h>' drivers/kernelsu/seccomp_cache.c
