@@ -35,38 +35,35 @@ jobs:
 
       - name: Install KernelSU
         run: |
-          # Standard KernelSU setup - leave as is
           rm -rf KernelSU drivers/kernelsu drivers/ksu
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
-          # 1. FIXED Kconfig & Makefile Injection (Corrected Path)
-          grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          grep -q "obj-y += kernelsu/" drivers/Makefile || echo 'obj-y += kernelsu/' >> drivers/Makefile
+          # 1. CLEAN & INJECT Kconfig/Makefile (Total Wipe of broken paths)
+          sed -i '/kernelsu/d' drivers/Kconfig
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          
+          sed -i '/kernelsu/d' drivers/Makefile
+          echo 'obj-y += kernelsu/' >> drivers/Makefile
 
           # 2. KERNELSU COMPATIBILITY FIXES
           if [ -d "drivers/kernelsu" ]; then
-            # Universal Header Fixes
             grep -rl "TWA_RESUME" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_RESUME|0|g'
             grep -rl "TWA_SIGNAL" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|TWA_SIGNAL|0|g'
             grep -rl "uapi/linux/mount.h" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|uapi/linux/mount.h|linux/mount.h|g'
             grep -rl "linux/pgtable.h" drivers/kernelsu 2>/dev/null | xargs -r sed -i 's|linux/pgtable.h|asm/pgtable.h|g'
 
-            # Fix A: Namespace Bypass
             sed -i 's|MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);|//MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);|g' drivers/kernelsu/ksu.c
             
-            # Fix C: seccomp filter_count Fix
             if [ -f "drivers/kernelsu/app_profile.c" ]; then
               sed -i 's|atomic_set(&current->seccomp.filter_count, 0);|//atomic_set(\&current->seccomp.filter_count, 0);|g' drivers/kernelsu/app_profile.c
             fi
 
-            # Fix E: fsnotify handle_inode_event Fix
             if [ -f "drivers/kernelsu/pkg_observer.c" ]; then
               sed -i 's|\.handle_inode_event = ksu_handle_inode_event,|\.handle_event = ksu_handle_inode_event,|g' drivers/kernelsu/pkg_observer.c
             fi
 
-            # Fix F: Missing SECCOMP_ARCH_NATIVE_NR (Idempotent)
             if [ -f "drivers/kernelsu/seccomp_cache.c" ]; then
               grep -q "asm-generic/unistd.h" drivers/kernelsu/seccomp_cache.c || \
               sed -i '1i#include <uapi/asm-generic/unistd.h>' drivers/kernelsu/seccomp_cache.c
@@ -75,7 +72,6 @@ jobs:
               sed -i '1i#ifndef SECCOMP_ARCH_NATIVE_NR\n#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls\n#endif' drivers/kernelsu/seccomp_cache.c
             fi
 
-            # Fix G: Safe file_operations compatibility
             if [ -f "drivers/kernelsu/file_wrapper.c" ]; then
               grep -q "REMAP_FILE_DEDUP" drivers/kernelsu/file_wrapper.c || sed -i '1i#define REMAP_FILE_DEDUP 0' drivers/kernelsu/file_wrapper.c
               sed -i 's|\.iopoll =|//.iopoll =|g' drivers/kernelsu/file_wrapper.c
@@ -84,7 +80,7 @@ jobs:
             fi
           fi
 
-          # 3. GPU FIX: Idempotent
+          # 3. GPU FIX
           if ! grep -q "set_isdb_breakpoint" drivers/gpu/msm/kgsl_device.h; then
             sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
           fi
@@ -92,7 +88,7 @@ jobs:
           # 4. SCHEDULER FIX
           sed -i '/cpufreq_bandido/d' kernel/sched/Makefile
           
-          # 5. ARCH FIX: Idempotent
+          # 5. ARCH FIX
           if ! grep -q "asm/insn.h" arch/arm64/kernel/module-plts.c; then
             sed -i '1i#include <asm/insn.h>' arch/arm64/kernel/module-plts.c
           fi
@@ -125,7 +121,7 @@ jobs:
           
           yes "" | make O=out ARCH=arm64 oldconfig
 
-          # 10. Compilation (Pure LLVM Suite)
+          # 10. Compilation
           make -j$(nproc) LLVM=1 LLVM_IAS=1 \
           O=out \
           ARCH=arm64 \
@@ -140,3 +136,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
+
