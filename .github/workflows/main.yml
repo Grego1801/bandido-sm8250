@@ -42,7 +42,7 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # 1. Patch Kconfig & Makefile (Back to your original working version)
+          # 1. Patch Kconfig & Makefile (KERNELSU PART - UNTOUCHED)
           sed -i '/ksu/d' drivers/Kconfig
           sed -i '/kernelsu/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
@@ -51,8 +51,8 @@ jobs:
           sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. GPU FIX: Inject missing struct member & safety header
-          sed -i '1i#include <stdbool.h>' drivers/gpu/msm/kgsl_device.h
+          # 2. GPU FIX: Inject missing struct member ONLY
+          # REMOVED the <stdbool.h> line to fix the conflict
           sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
 
           # 3. SCHEDULER FIX: Remove all missing bandido files
@@ -119,3 +119,4 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
+
