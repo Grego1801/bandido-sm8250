@@ -42,14 +42,16 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # 1. KSU Patching
+          # 1. Patch Kconfig & Makefile (Back to your original working version)
           sed -i '/ksu/d' drivers/Kconfig
+          sed -i '/kernelsu/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          
           sed -i '/ksu/d' drivers/Makefile
+          sed -i '/kernelsu/d' drivers/Makefile
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          # 2. GPU FIX: Inject missing struct member & safety header (Your Safety Patch)
-          # We add stdbool.h to the top and the bool member to the struct
+          # 2. GPU FIX: Inject missing struct member & safety header
           sed -i '1i#include <stdbool.h>' drivers/gpu/msm/kgsl_device.h
           sed -i '/struct kgsl_device {/a \	bool set_isdb_breakpoint;' drivers/gpu/msm/kgsl_device.h
 
@@ -81,7 +83,7 @@ jobs:
           scripts/config --file out/.config --disable CONFIG_EXYNOS_MFC
           scripts/config --file out/.config --disable CONFIG_FIRMWARE_IN_KERNEL
           
-          # 8. KSU REQUIREMENTS: Enable full symbol support
+          # 8. KSU REQUIREMENTS
           scripts/config --file out/.config --enable CONFIG_KPROBES
           scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
           scripts/config --file out/.config --enable CONFIG_KALLSYMS
@@ -117,4 +119,3 @@ jobs:
           path: |
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dtb*
-
