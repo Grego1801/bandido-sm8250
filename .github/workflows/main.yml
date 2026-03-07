@@ -1,47 +1,68 @@
 name: Kernel Build
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - bandido
+workflow_dispatch:
+push:
+branches:
+- bandido
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+build:
+runs-on: ubuntu-22.04
 
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+steps:
+  - name: Checkout source
+    uses: actions/checkout@v4
+    with:
+      submodules: recursive
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-          bc bison build-essential ccache curl flex git \
-          libssl-dev libelf-dev python3 \
-          clang lld llvm
+  - name: Install dependencies
+    run: |
+      sudo apt update
+      sudo apt install -y \
+        bc \
+        bison \
+        build-essential \
+        ccache \
+        curl \
+        flex \
+        git \
+        libssl-dev \
+        libelf-dev \
+        python3 \
+        clang-14 \
+        lld-14 \
+        llvm-14 \
+        device-tree-compiler
 
-      - name: Build kernel
-        run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          mkdir out
+  - name: Build kernel
+    run: |
+      export ARCH=arm64
+      export SUBARCH=arm64
 
-          make O=out vendor/r8q_eur_open_defconfig
+      rm -rf out
+      mkdir out
 
-          make -j$(nproc) \
-            O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1
+      make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
 
-      - name: Upload kernel
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel
-          path: |
-            out/arch/arm64/boot/*
+      make -j$(nproc) \
+        O=out \
+        ARCH=arm64 \
+        CC=clang-14 \
+        LD=ld.lld-14 \
+        AR=llvm-ar-14 \
+        NM=llvm-nm-14 \
+        OBJCOPY=llvm-objcopy-14 \
+        OBJDUMP=llvm-objdump-14 \
+        STRIP=llvm-strip-14 \
+        LLVM=1 \
+        LLVM_IAS=1
+
+  - name: Upload kernel
+    uses: actions/upload-artifact@v4
+    with:
+      name: kernel
+      path: |
+        out/arch/arm64/boot/Image*
+        out/arch/arm64/boot/*.dtb
+        out/arch/arm64/boot/*.dtbo
