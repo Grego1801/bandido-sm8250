@@ -1,86 +1,45 @@
-name: Build Kernel
+name: Kernel Build
 
 on:
-push:
-branches:
-- bandido
-workflow_dispatch:
+  workflow_dispatch:
+  push:
+    branches:
+      - bandido
 
 jobs:
-build:
-runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-22.04
 
-steps:
-  - name: Checkout source
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-  - name: Install dependencies
-    run: |
-      sudo apt update
-      sudo apt install -y bc bison build-essential ccache curl flex git \
-      gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-      libssl-dev libncurses5-dev libncurses-dev \
-      lzop python3 unzip zip wget binutils-aarch64-linux-gnu
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+          bc bison build-essential ccache curl flex git \
+          libssl-dev libelf-dev python3 \
+          clang lld llvm
 
-  - name: Cache Proton Clang
-    uses: actions/cache@v4
-    with:
-      path: clang
-      key: proton-clang-v1
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          mkdir out
 
-  - name: Download Proton Clang
-    run: |
-      if [ ! -d "clang" ]; then
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
-      fi
+          make O=out vendor/r8q_eur_open_defconfig
 
-  - name: Setup KernelSU
-    run: |
-      curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash
+          make -j$(nproc) \
+            O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1
 
-  - name: Build Kernel
-    run: |
-      export ARCH=arm64
-      export SUBARCH=arm64
-      export PATH=$PWD/clang/bin:$PATH
-      export CLANG_TRIPLE=aarch64-linux-gnu-
-      export CROSS_COMPILE=aarch64-linux-gnu-
-      export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-      export KCONFIG_NONINTERACTIVE=1
-
-      mkdir -p out
-
-      make O=out ARCH=arm64 vendor/r8q_eur_open_defconfig
-
-      scripts/config --file out/.config --enable CONFIG_KPROBES
-      scripts/config --file out/.config --enable CONFIG_HAVE_KPROBES
-      scripts/config --file out/.config --enable CONFIG_KALLSYMS
-      scripts/config --file out/.config --enable CONFIG_KALLSYMS_ALL
-      scripts/config --file out/.config --enable CONFIG_MODULES
-      scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
-      scripts/config --file out/.config --enable CONFIG_KSU
-
-      yes "" | make O=out ARCH=arm64 oldconfig
-
-      make -j$(nproc) \
-      O=out \
-      ARCH=arm64 \
-      CC=clang \
-      CLANG_TRIPLE=$CLANG_TRIPLE \
-      CROSS_COMPILE=$CROSS_COMPILE \
-      CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
-      LD=ld.lld \
-      AR=llvm-ar \
-      NM=llvm-nm \
-      OBJCOPY=llvm-objcopy \
-      OBJDUMP=llvm-objdump \
-      STRIP=llvm-strip
-
-  - name: Upload kernel
-    if: always()
-    uses: actions/upload-artifact@v4
-    with:
-      name: kernel-image
-      path: |
-        out/arch/arm64/boot/Image
-        out/arch/arm64/boot/dtb*
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel
+          path: |
+            out/arch/arm64/boot/*
